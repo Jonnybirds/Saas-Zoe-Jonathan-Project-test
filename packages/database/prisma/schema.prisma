@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum AIRunStatus {
+  SUCCEEDED
+  NEEDS_REVIEW
+  FAILED
+}
+
+model Tenant {
+  id            String         @id @default(uuid())
+  name          String
+  status        TenantStatus   @default(ACTIVE)
+  region        String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  organizations Organization[]
+  users         User[]
+  roles         Role[]
+  permissions   Permission[]
+  auditLogs     AuditLog[]
+  aiRuns        AIRun[]
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  tenantId    String
+  name        String
+  externalRef String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  memberships Membership[]
+
+  @@index([tenantId])
+}
+
+model User {
+  id           String         @id @default(uuid())
+  tenantId     String
+  email        String
+  firstName    String
+  lastName     String
+  passwordHash String
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  memberships  Membership[]
+  userRoles    UserRole[]
+  authSessions AuthSession[]
+  aiRuns       AIRun[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Membership {
+  id             String           @id @default(uuid())
+  tenantId       String
+  organizationId String
+  userId         String
+  status         MembershipStatus @default(ACTIVE)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([tenantId, organizationId])
+}
+
+model Role {
+  id              String           @id @default(uuid())
+  tenantId        String
+  code            String
+  name            String
+  isSystem        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model Permission {
+  id              String           @id @default(uuid())
+  tenantId        String
+  code            String
+  name            String
+  category        String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model UserRole {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, roleId])
+  @@index([tenantId, roleId])
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  tenantId     String
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@unique([roleId, permissionId])
+  @@index([tenantId, permissionId])
+}
+
+model AuthSession {
+  id                String   @id @default(uuid())
+  tenantId          String
+  userId            String
+  refreshTokenHash  String
+  deviceFingerprint String?
+  ipAddress         String?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, userId])
+}
+
+model AIRun {
+  id               String             @id @default(uuid())
+  tenantId         String
+  actorUserId      String?
+  useCase          String
+  subjectType      String
+  subjectId        String
+  status           AIRunStatus
+  modelVersion     String
+  promptVersion    String
+  inputJson        Json
+  confidence       Decimal            @db.Decimal(5, 4)
+  rationaleSummary String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actorUser        User?              @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  recommendation   AIRecommendation?
+  factors          AIDecisionFactor[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, subjectType, subjectId])
+}
+
+model AIRecommendation {
+  id                  String   @id @default(uuid())
+  aiRunId             String   @unique
+  recommendationCode  String
+  recommendationLabel String
+  reasonCode          String
+  reasonText          String
+  requiresHumanReview Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  aiRun               AIRun    @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+}
+
+model AIDecisionFactor {
+  id        String   @id @default(uuid())
+  aiRunId   String
+  factorKey String
+  label     String
+  value     String
+  weight    Decimal  @db.Decimal(5, 4)
+  impact    Decimal  @db.Decimal(8, 4)
+  direction String
+  rationale String
+  createdAt DateTime @default(now())
+  aiRun     AIRun    @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+
+  @@index([aiRunId])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@index([action])
+}
