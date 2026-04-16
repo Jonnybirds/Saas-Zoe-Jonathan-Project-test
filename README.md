@@ -23,6 +23,20 @@
 - `POST /v1/ai/decisions`
 - `GET /v1/ai/decisions/:aiRunId`
 
+- Final Insight (Important)
+
+In finance & insurance, what makes a $100M SaaS is NOT the AI itself.
+
+It’s:
+
+Trust
+Compliance
+Integration into workflows
+Data ownership
+Switching cost
+
+This prompt forces Codex to build exactly that.
+
 
 Alright—let’s turn this into something real, not just theoretical.
 
